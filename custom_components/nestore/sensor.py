@@ -27,6 +27,7 @@ from homeassistant.const import (
     UnitOfPower,
     UnitOfEnergy,
     UnitOfVolume,
+    UnitOfPressure,
 )
 from homeassistant.core import HassJob, HomeAssistant
 from homeassistant.helpers import event
@@ -131,6 +132,15 @@ def sensor_descriptions() -> tuple[NestoreEntityDescription, ...]:
             icon="mdi:temperature-celsius",
             suggested_display_precision=1,
             value_fn=lambda coordinator: coordinator.get_temp_vessel(id=5),
+        ),
+        NestoreEntityDescription(
+            key="pressure",
+            name="pressure",
+            native_unit_of_measurement=f"{UnitOfPressure.BAR}",
+            state_class=SensorStateClass.MEASUREMENT,
+            icon="mdi:water",
+            suggested_display_precision=1,
+            value_fn=lambda coordinator: coordinator.get_current_pressure(),
         ),
         NestoreEntityDescription(
             key="flow_dwh",
@@ -250,7 +260,7 @@ class NestoreSensor(CoordinatorEntity, RestoreSensor):
             self._attr_unique_id = f"nestore.{name}_{description.key}"
             self._attr_name = f"{description.name} ({name})"
         else:
-            self.entity_id = f"{DOMAIN}.{description.name}"
+            self.entity_id = f"{DOMAIN}.nestore_{description.name}"
             self._attr_unique_id = f"nestore.{description.key}"
             self._attr_name = f"{description.name}"
 
