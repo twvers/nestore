@@ -5,17 +5,30 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 
-import homeassistant.helpers.config_validation as cv
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.template import Template
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from homeassistant.util import dt
-from jinja2 import pass_context
 from requests.exceptions import HTTPError
 
 from .api_client import NestoreClient
 
 _LOGGER = logging.getLogger(__name__)
+
+from .const import (
+    DOMAIN,
+    CONF_HOST,
+    CONF_API_KEY,
+    CONF_PORT,
+    CONF_USERNAME,
+    CONF_PASSWORD,
+    CONF_UPDATE_INTERVAL,
+    CONF_FULL_LOGGING,
+    CONF_CONTROL,
+    DEFAULT_LOC_ACTIVE,
+    DEFAULT_LOC_FLAG,
+    DEFAULT_LOC_CONTROLLER,
+    DEFAULT_LOC_INPUT,
+    DEFAULT_LOC_DATA,
+)
 
 
 class NestoreCoordinator(DataUpdateCoordinator):
@@ -24,31 +37,25 @@ class NestoreCoordinator(DataUpdateCoordinator):
     def __init__(
         self,
         hass: HomeAssistant,
-        hostname,
-        port,
+        config_entry,
         api_keys,
-        username,
-        pwd,
-        min_interval,
-        full_logging,
-        control_enabled,
     ) -> None:
         """Initialize the data object."""
         self.hass = hass
-        self.host = hostname
-        self.port = port
+        self.config_entry = config_entry
         self.api_keys = api_keys
-        self.user = username
-        self.pwd = pwd
-        self.min_interval = min_interval
-        self.full_logging = full_logging
-        self.control_enabled = control_enabled
+        self.host = api_keys["HOST"]
+        self.port = api_keys["PORT"]
+        self.min_interval = self.config_entry.options[CONF_UPDATE_INTERVAL]
+        self.full_logging = self.config_entry.options[CONF_FULL_LOGGING]
+        self.control_enabled = self.config_entry.options[CONF_CONTROL]
         self.power_level = 0
         self.target_soc = 0
 
         self.data_base = None
         self.data_derived = None
         self.data_counters = None
+        self.active = {"MODE": False, "ONLINE": False}
 
         logger = logging.getLogger(__name__)
         super().__init__(
@@ -58,44 +65,68 @@ class NestoreCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=self.min_interval),
         )
 
+    async def async_update_interval(self, new_seconds: float) -> None:
+        """Update the polling interval."""
+        new_interval = timedelta(seconds=new_seconds)
+
+        _LOGGER.debug("Updating polling interval to %s seconds", new_seconds)
+
+        # Update the interval
+        self.update_interval = new_interval
+
+        # Force an immediate update and reschedule
+        # Cancel any existing update task
+        if self._unsub_refresh:
+            self._unsub_refresh()
+            self._unsub_refresh = None
+        # Restart the update task with the new interval
+        self._unsub_refresh = self._schedule_refresh()
+
+        # trigger a refresh data
+        await self.async_refresh()
+
+    def get_polling_interval(self):
+        return self.update_interval
+
     # Triggered by HA to refresh the data
     async def _async_update_data(self) -> dict:
-        """Get the latest data from NEStore"""
-        _LOGGER.debug("Nestore DataUpdateCoordinator data update")
+        """Get the latest data from NEStore."""
+        _LOGGER.info("Nestore DataUpdateCoordinator data update")
 
-        # fetching all data
+        # fetching all data locations
         data = await self.fetch_data(self.api_keys["DATA"])
-        _LOGGER.debug(f"received data = {data.keys()}")
+        # _LOGGER.debug(f"received data = {data.keys()}")
 
         data_control = await self.fetch_data(self.api_keys["CONTROL"])
-        _LOGGER.debug(f"received data = {data_control.keys()}")
-
-        data_control = await self.fetch_data(self.api_keys["CONTROL"])
-        _LOGGER.debug(f"received data = {data_control.keys()}")
+        # _LOGGER.debug(f"received data = {data_control.keys()}")
 
         data_active = await self.fetch_data(self.api_keys["ACTIVE"])
-        _LOGGER. debug(f"received data = {data_active.keys()}")
+        # _LOGGER.debug(f"received data = {data_active.keys()}")
+
+        returnStates = {}
 
         if data is not None:
             self.data_base = data["PAYLOAD"]["BASE"]
             self.data_counters = data["PAYLOAD"]["COUNTERS"]
             self.data_derived = data["PAYLOAD"]["DERIVED"]
-            self.logger.debug(f"parsed DATA")
+            self.logger.debug("Parsed DATA log")
+            returnStates["Data"] = True
 
         if data_control is not None:
             self.device_state = data_control["PAYLOAD"]["NAME"]
-            self.logger.debug(f"parsed CONTROL")
+            self.logger.debug("Parsed CONTROL log")
+            returnStates["Control"] = True
 
         if data_active is not None:
-            self.active = {}
             self.active["MODE"] = data_active["PAYLOAD"]["DEPENDENT_MODE"]
             self.active["ONLINE"] = data_active["PAYLOAD"]["ONLINE_MODE"]
-            self.logger.debug(f"parsed ACTIVE")
+            self.logger.debug("Parsed ACTIVE log")
+            returnStates["Active"] = True
 
-        return {"Data": 1, "Control": 1, "Active": 1}
+        return returnStates
 
-    # GENERAL: New data using an async job
     async def fetch_data(self, api_loc):
+        """Fetch data using api routine."""
         try:
             # run api_update in async job
             resp = await self.hass.async_add_executor_job(
@@ -106,12 +137,12 @@ class NestoreCoordinator(DataUpdateCoordinator):
         except HTTPError as exc:
             if exc.response.status_code == 401:
                 raise UpdateFailed("Unauthorized: Please check your API-key.") from exc
-        except Exception as exc:
-            self.logger.warning(
-                f"Warning the integration doesn't have any up to date local data this means that entities won't get updated but access remains to restorable entities: {exc}."
-            )
+            else:
+                _LOGGER.debug("Fetch data failed")
+                return None
 
     async def update_state(self, api_loc, state_flag):
+        """Update state using api routine."""
         try:
             # run api_update in async job
             resp = await self.hass.async_add_executor_job(
@@ -122,12 +153,9 @@ class NestoreCoordinator(DataUpdateCoordinator):
         except HTTPError as exc:
             if exc.response.status_code == 401:
                 raise UpdateFailed("Unauthorized: Please check your API-key.") from exc
-        except Exception as exc:
-            self.logger.warning(
-                f"Warning the integration doesn't have any up to date local data this means that entities won't get updated but access remains to restorable entities: {exc}."
-            )
 
     async def post_state(self, api_loc, power_level):
+        """Post state using api routine."""
         try:
             # run api_update in async job
             resp = await self.hass.async_add_executor_job(
@@ -138,10 +166,6 @@ class NestoreCoordinator(DataUpdateCoordinator):
         except HTTPError as exc:
             if exc.response.status_code == 401:
                 raise UpdateFailed("Unauthorized: Please check your API-key.") from exc
-        except Exception as exc:
-            self.logger.warning(
-                f"Warning the integration doesn't have any up to date local data this means that entities won't get updated but access remains to restorable entities: {exc}."
-            )
 
     # GENERAL: async fetch job itself
     def api_update(self, host, port, api_key):
@@ -159,65 +183,76 @@ class NestoreCoordinator(DataUpdateCoordinator):
         client = NestoreClient(host=host, port=port, api_key=api_key)
         return client.post_request(power_level)
 
-    # ENTSO: Return the data for the given date
-    # def get_all_base_data(self):
-    #    return {k: v for k, v in self.data_base.items()}
+    # Data retrieval routines
 
-    # DATA RETRIEVAL: Get current state of charge
     def get_current_soc(self):
+        """Get current state of charge."""
         return self.data_derived["SOC_VES"]
 
     def get_current_soc_total(self):
+        """Get current total state of charge."""
         return self.data_derived["SOC_VES_TOTAL"]
 
     def get_heater_temp(self):
+        """Get current heater temperature."""
         return self.data_base["TEMP_HTR_OUT"]
 
     def get_flow(self):
+        """Get water flow."""
         return self.data_derived["FLOW_DHW"]
 
     def get_current_pressure(self):
+        """Get current pressure."""
         return self.data_base["PRES_SYS"]
 
     def get_temp_vessel(self, id):
+        """Get internal temperature of specified zone."""
         return self.data_base[f"TEMP_VES_INT_{id}"]
 
     def get_power_heater(self):
+        """Get heater electrical power."""
         return self.data_base["POWER_HEATER"]
 
     def get_device_state(self):
+        """Get current device state."""
         return self.device_state
 
     def get_operation_mode(self):
+        """Get current operating mode."""
         return self.active["MODE"]
 
     def get_online_mode(self):
+        """Get online status."""
         return self.active["ONLINE"]
 
     def set_target_power_level(self, value):
+        """Set target power level."""
         self.power_level = int(value)
 
     def get_target_power_level(self):
+        """Get target power level."""
         return self.power_level
 
     def set_target_soc_level(self, value):
+        """Set target max state of charge level."""
         self.target_soc = value
 
     def get_target_soc_level(self):
+        """Get target max state of charge level."""
         return self.target_soc
 
-    # total output energy dhw in kJ
     def get_total_energy_dhw(self):
+        """Get total energy DHW in kWh"""
         return self.data_counters["ENERGY_DHW_THERMAL"] / 1000.0
 
-    # total stored energy in kJ
     def get_current_energy_dhw(self):
+        """Get current stored energy DHW in kWh"""
         return self.data_counters["ENERGY_DHW_THERMAL_THEORETICAL"] / 1000.0
 
-    # return total electrical input power in kJ
     def get_total_electrical(self):
+        """Get total electrical energy input in kWh"""
         return self.data_counters["ENERGY_CRG_ELECTRICAL"] / 1000.0
 
-    # return total volume DHW in L
     def get_total_dhw(self):
-        return self.data_counters["VOL_DHW"] / 1000.0
+        """Get total water volume provided in"""
+        return self.data_counters["VOL_DHW"]

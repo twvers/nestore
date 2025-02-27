@@ -223,7 +223,9 @@ async def async_setup_entry(
         for entity in entities:
             await entity.async_update_ha_state(True)
 
-    async_track_time_interval(hass, update_entities, timedelta(minutes=1))
+    poll_interval = nestore_coordinator.get_polling_interval()
+
+    async_track_time_interval(hass, update_entities, poll_interval)
 
 
 class NestoreSensor(CoordinatorEntity, RestoreSensor):
@@ -285,12 +287,12 @@ class NestoreSensor(CoordinatorEntity, RestoreSensor):
 
         value: Any = None
         try:
-            _LOGGER.debug(f"current coordinator.data value: {self.coordinator.data}")
+            # _LOGGER.debug(f"current coordinator.data value: {self.coordinator.data}")
             value = self.entity_description.value_fn(self.coordinator)
 
             self._attr_native_value = value
             self.last_update_success = True
-            _LOGGER.debug(f"updated '{self.entity_id}' to value: {value}")
+            # _LOGGER.debug(f"updated '{self.entity_id}' to value: {value}")
             # force updae
             # self.async_write_ha_state()
         except Exception as exc:

@@ -24,6 +24,7 @@ from .const import (
     DEFAULT_LOC_FLAG,
     DEFAULT_LOC_CONTROLLER,
     DEFAULT_LOC_INPUT,
+    DEFAULT_LOC_DATA,
 )
 
 from .services import async_setup_services
@@ -44,28 +45,28 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up nestore from a config entry."""
 
-    _LOGGER.debug("config data {entry.options}")
-    # initialize with the config data that is saved
-    username = entry.data[CONF_USERNAME]
-    pwd = entry.data[CONF_PASSWORD]
+    _LOGGER.debug(f"Setup config data {entry.data} {entry.options}")
+
     hostname = entry.data[CONF_HOST]
     port = entry.data[CONF_PORT]
-    min_interval = entry.options[CONF_UPDATE_INTERVAL]
-    full_logging = entry.options[CONF_FULL_LOGGING]
-    control_enabled = entry.options[CONF_CONTROL]
 
-    hostID = "nestore.home"  # Replace with your target hostname
-    try:
-        hostname = socket.gethostbyname(hostID)
-        _LOGGER.info("The IP address of %s is %s", hostID, hostname)
-        # You can now use this IP address for further configuration
-    except socket.gaierror:
-        _LOGGER.error("Unable to resolve hostname: %s", hostID)
+    if len(hostname) > 0:
+        _LOGGER.info("Using fixed IP address %s at port %s ", hostname, port)
+    else:
+        # find the host name
+        hostID = "nestore.home"  # Replace with your target hostname
+        try:
+            hostname = socket.gethostbyname(hostID)
+            _LOGGER.info("The IP address of %s is %s", hostID, hostname)
+            # You can now use this IP address for further configuration
+        except socket.gaierror:
+            _LOGGER.error("Unable to resolve hostname: %s", hostID)
 
     # list of api keys
     api_keys = {}
     api_keys["HOST"] = hostname
-    api_keys["DATA"] = entry.data[CONF_API_KEY]
+    api_keys["PORT"] = port
+    api_keys["DATA"] = DEFAULT_LOC_DATA
     api_keys["CONTROL"] = DEFAULT_LOC_CONTROLLER
     api_keys["INPUT"] = DEFAULT_LOC_INPUT
     api_keys["FLAGS"] = DEFAULT_LOC_FLAG
@@ -75,14 +76,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # create coordinator
     nestore_coordinator = NestoreCoordinator(
         hass,
-        hostname,
-        port,
+        entry,
         api_keys,
-        username,
-        pwd,
-        min_interval,
-        full_logging,
-        control_enabled,
     )
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = nestore_coordinator
 
@@ -94,11 +89,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload config entry."""
+    await async_unload_entry(hass, entry)
+    await async_setup_entry(hass, entry)
 
 
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Update options."""
-    await hass.config_entries.async_reload(entry.entry_id)
+    # await hass.config_entries.async_reload(entry.entry_id)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    await coordinator.async_update_interval(entry.options[CONF_UPDATE_INTERVAL])
+    _LOGGER.debug("Updating polling interval")

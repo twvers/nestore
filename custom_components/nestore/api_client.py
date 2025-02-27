@@ -15,7 +15,10 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class NestoreClient:
+    """Main integration class."""
+
     def __init__(self, host, port, api_key: str):
+        """Init function with host address."""
         if api_key == "":
             raise TypeError("API key cannot be empty")
         self.host = host
@@ -30,7 +33,7 @@ class NestoreClient:
 
         try:
             response = requests.get(url=URL, timeout=10)  # Timeout set to 10 seconds
-            _LOGGER.debug("Performed GET request to {URL}")
+            _LOGGER.debug(f"Performed GET request to {URL}")
         except requests.Timeout:
             _LOGGER.debug("Request Timeout")
             return None
@@ -39,10 +42,10 @@ class NestoreClient:
             try:
                 series = self.parse_data(response.json())
             except Exception as exc:
-                _LOGGER.debug("Failed to retrieve data: {response.status_code}")
+                _LOGGER.debug(f"Failed to retrieve data: {response.status_code}")
                 raise exc
         else:
-            _LOGGER.debug("Failed to retrieve data: {response.status_code}")
+            _LOGGER.debug(f"Failed to retrieve data: {response.status_code}")
             return None
 
         return series
@@ -53,13 +56,17 @@ class NestoreClient:
         URL = f"http://{self.host}:{self.port}/{self.api_key}"
 
         payload = {"path": "DEPENDENT_MODE", "value": str(bool_state)}
-        response = requests.patch(url=URL, json=payload)
-        _LOGGER.debug("Performing PATCH request to {URL} with {payload}")
+        try:
+            response = requests.patch(url=URL, json=payload)
+            _LOGGER.debug(f"Performing PATCH request to {URL} with {payload}")
+        except requests.Timeout:
+            _LOGGER.debug("Request Timeout")
+            return None
 
         if response.status_code == 200:
-            _LOGGER.debug("Successfull call with response: {response.text}")
+            _LOGGER.debug(f"Successfull call with response: {response.text}")
         else:
-            _LOGGER.debug("Failed to patch: {response.status_code}")
+            _LOGGER.debug(f"Failed to patch: {response.status_code}")
             return None
 
     def post_request(self, power_level) -> str:
@@ -68,20 +75,24 @@ class NestoreClient:
         if power_level < MIN_POWER_LEVEL:
             stext = "charge_electrical_stop_force"
         elif power_level < MAX_POWER_LEVEL:
-            stext = "charge_electrical_start_force?power={power_level}"
+            stext = f"charge_electrical_start_force?power={power_level}"
 
         URL = f"http://{self.host}:{self.port}/{self.api_key}/{stext}"
 
-        response = requests.post(url=URL)
-        _LOGGER.debug("Performing POST request to {URL}")
-
-        if response.status_code == 200:
-            _LOGGER.debug("Successfull call with response: {response.text}")
-        else:
-            _LOGGER.debug("Failed to patch: {response.status_code}")
+        try:
+            response = requests.post(url=URL)
+            _LOGGER.debug(f"Performing POST request to {URL}")
+        except requests.Timeout:
+            _LOGGER.debug("Request Timeout")
             return None
 
-    # lets process the received document (future need)
+        if response.status_code == 200:
+            _LOGGER.debug(f"Successfull call with response: {response.text}")
+        else:
+            _LOGGER.debug(f"Failed to patch: {response.status_code}")
+            return None
+
     def parse_data(self, data: dict) -> str:
+        """Function to perform some data parsing in the future."""
         # _LOGGER.debug(f"json PAYLOAD BASE: {series}")
         return data

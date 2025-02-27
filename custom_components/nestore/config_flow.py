@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 import voluptuous as vol
 
@@ -48,96 +48,40 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-
-async def validate_options_input(
-    handler: SchemaCommonFlowHandler, user_input: dict[str, Any]
-) -> dict[str, Any]:
-    """Validate options are valid."""
-
-    if CONF_UPDATE_INTERVAL in user_input:
-        polling_interval: int = user_input[CONF_UPDATE_INTERVAL]
-        if not 1 <= polling_interval <= 3600:
-            raise SchemaFlowError("invalid_polling_interval")
-
-    return user_input
-
-
-async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
-    """Check that the inputs are valid."""
-
-    title = {"title": "NEStore Local"}
-    return title
-
-
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_HOST, default=DEFAULT_HOST): vol.All(vol.Coerce(str)),
+        vol.Optional(CONF_HOST, default=DEFAULT_HOST): vol.All(vol.Coerce(str)),
         vol.Optional(CONF_PORT, default=DEFAULT_PORT): vol.All(vol.Coerce(str)),
-        vol.Optional(CONF_API_KEY, default=DEFAULT_LOC_DATA): vol.All(vol.Coerce(str)),
-    }
-)
-
-OPTIONS_SCHEMA = vol.Schema(
-    {
         vol.Optional(CONF_UPDATE_INTERVAL, default=DEFAULT_INTERVAL): vol.All(
-            vol.Coerce(int)
+            vol.Coerce(int), vol.Range(min=30, max=3600)
         ),
         vol.Required(CONF_FULL_LOGGING, default=DEFAULT_LOGGING): bool,
         vol.Required(CONF_CONTROL, default=DEFAULT_CONTROL): bool,
     }
 )
 
-OPTIONS_FLOW = {
-    "init": SchemaFlowFormStep(
-        OPTIONS_SCHEMA,
-        validate_user_input=validate_options_input,
-    )
-}
 
-
-class NestoreFlowHandler(ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for nestore."""
+class NestoreConfigFlow(ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for the Heater integration."""
 
     VERSION = 1
 
     async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
+        self, user_input: Optional[dict[str, Any]] = None
     ) -> ConfigFlowResult:
         """Handle the initial step."""
-        if user_input is None:
-            return self.async_show_form(
-                step_id="user", data_schema=STEP_USER_DATA_SCHEMA
-            )
-
         errors = {}
 
-        # adding a few default items
         if user_input is not None:
-            user_input[CONF_USERNAME] = DEFAULT_USERNAME
-            user_input[CONF_PASSWORD] = DEFAULT_PASSWORD
-            user_input[CONF_FULL_LOGGING] = DEFAULT_LOGGING
-            user_input[CONF_CONTROL] = DEFAULT_CONTROL
+            # Validate the input here
+            try:
+                # Your validation logic for API connection
+                return self.async_create_entry(
+                    title="Nestore Device", data=user_input, options=user_input
+                )
+            except Exception as error:
+                errors["base"] = "cannot_connect"
 
-        user_options = {}
-        user_options[CONF_UPDATE_INTERVAL] = DEFAULT_INTERVAL
-        user_options[CONF_FULL_LOGGING] = DEFAULT_LOGGING
-        user_options[CONF_CONTROL] = DEFAULT_CONTROL
-
-        try:
-            info = await validate_input(self.hass, user_input)
-        except CannotConnect:
-            errors["base"] = "cannot_connect"
-        except InvalidAuth:
-            errors["base"] = "invalid_auth"
-        except Exception:
-            _LOGGER.exception("Unexpected exception")
-            errors["base"] = "unknown"
-        else:
-            return self.async_create_entry(
-                title=info["title"], data=user_input, options=user_options
-            )
-
-        # Only called if there was an error.
         return self.async_show_form(
             step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
         )
@@ -147,13 +91,39 @@ class NestoreFlowHandler(ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(
         config_entry: ConfigEntry,
     ) -> OptionsFlow:
-        """Get the options flow for this handler."""
-        return SchemaOptionsFlowHandler(config_entry, OPTIONS_FLOW)
+        """Create the options flow."""
+        return NestoreOptionsFlowHandler(config_entry)
 
 
-class CannotConnect(HomeAssistantError):
-    """Error to indicate we cannot connect."""
+class NestoreOptionsFlowHandler(OptionsFlow):
+    """Handle options flow changes."""
 
+    def __init__(self, config_entry: ConfigEntry) -> None:
+        """Initialize options flow."""
+        self.min_interval = config_entry.options[CONF_UPDATE_INTERVAL]
 
-class InvalidAuth(HomeAssistantError):
-    """Error to indicate there is invalid auth."""
+    async def async_step_init(
+        self, user_input: Optional[dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        """Manage the options."""
+        errors = {}
+
+        if user_input is not None:
+            # Update the config entry
+            return self.async_create_entry(title="", data=user_input)
+
+        OPTIONS_SCHEMA = vol.Schema(
+            {
+                vol.Optional(CONF_UPDATE_INTERVAL, default=self.min_interval): vol.All(
+                    vol.Coerce(int), vol.Range(min=30, max=3600)
+                ),
+                vol.Required(CONF_FULL_LOGGING, default=DEFAULT_LOGGING): bool,
+                vol.Required(CONF_CONTROL, default=DEFAULT_CONTROL): bool,
+            }
+        )
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=OPTIONS_SCHEMA,
+            errors=errors,
+        )
