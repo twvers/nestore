@@ -73,14 +73,25 @@ class NestoreClient:
         """Definition API POST call."""
 
         if power_level < MIN_POWER_LEVEL:
-            stext = "charge_electrical_stop_force"
+            data_json = {
+                "TASK": "ControlTask_ChargingElectrical_Stop",
+                "spin": True,
+                "persistent": True,
+                "lifetime": 60,
+            }
         elif power_level < MAX_POWER_LEVEL:
-            stext = f"charge_electrical_start_force?power={power_level}"
+            data_json = {
+                "TASK": "ControlTask_ChargingElectrical_Start",
+                "spin": True,
+                "power": power_level,
+                "persistent": True,
+                "lifetime": 10000,
+            }
 
-        URL = f"http://{self.host}:{self.port}/{self.api_key}/{stext}"
+        URL = f"http://{self.host}:{self.port}/{self.api_key}/"
 
         try:
-            response = requests.post(url=URL)
+            response = requests.post(url=URL, json=data_json)
             _LOGGER.debug(f"Performing POST request to {URL}")
         except requests.Timeout:
             _LOGGER.debug("Request Timeout")

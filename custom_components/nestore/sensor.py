@@ -159,20 +159,6 @@ def sensor_descriptions() -> tuple[NestoreEntityDescription, ...]:
             value_fn=lambda coordinator: coordinator.get_device_state(),
         ),
         NestoreEntityDescription(
-            key="dependent_mode",
-            name="dependent mode",
-            icon="mdi:database",
-            device_class=SensorDeviceClass.ENUM,
-            value_fn=lambda coordinator: coordinator.get_operation_mode(),
-        ),
-        NestoreEntityDescription(
-            key="online_mode",
-            name="online_mode",
-            icon="mdi:database",
-            device_class=SensorDeviceClass.ENUM,
-            value_fn=lambda coordinator: coordinator.get_online_mode(),
-        ),
-        NestoreEntityDescription(
             key="total energy dhw",
             name="total energy dhw",
             native_unit_of_measurement=f"{UnitOfEnergy.KILO_JOULE}",

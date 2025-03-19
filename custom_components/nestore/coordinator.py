@@ -100,9 +100,6 @@ class NestoreCoordinator(DataUpdateCoordinator):
         data_control = await self.fetch_data(self.api_keys["CONTROL"])
         # _LOGGER.debug(f"received data = {data_control.keys()}")
 
-        data_active = await self.fetch_data(self.api_keys["ACTIVE"])
-        # _LOGGER.debug(f"received data = {data_active.keys()}")
-
         returnStates = {}
 
         if data is not None:
@@ -116,12 +113,6 @@ class NestoreCoordinator(DataUpdateCoordinator):
             self.device_state = data_control["PAYLOAD"]["NAME"]
             self.logger.debug("Parsed CONTROL log")
             returnStates["Control"] = True
-
-        if data_active is not None:
-            self.active["MODE"] = data_active["PAYLOAD"]["DEPENDENT_MODE"]
-            self.active["ONLINE"] = data_active["PAYLOAD"]["ONLINE_MODE"]
-            self.logger.debug("Parsed ACTIVE log")
-            returnStates["Active"] = True
 
         return returnStates
 
@@ -216,14 +207,6 @@ class NestoreCoordinator(DataUpdateCoordinator):
     def get_device_state(self):
         """Get current device state."""
         return self.device_state
-
-    def get_operation_mode(self):
-        """Get current operating mode."""
-        return self.active["MODE"]
-
-    def get_online_mode(self):
-        """Get online status."""
-        return self.active["ONLINE"]
 
     def set_target_power_level(self, value):
         """Set target power level."""

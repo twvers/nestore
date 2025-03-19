@@ -23,12 +23,12 @@ DEFAULT_INTERVAL = 300
 DEFAULT_LOGGING = True
 DEFAULT_CONTROL = True
 
-DEFAULT_LOC_DATA = "api/v1/data/engineering"
-DEFAULT_LOC_MEAS = "api/v1/data/measured"
-DEFAULT_LOC_CONTROLLER = "api/v1/data/controller"
-DEFAULT_LOC_ACTIVE = "api/v1/configuration/installer/active"
-DEFAULT_LOC_INPUT = "api/v1/configuration/settings/input"
-DEFAULT_LOC_FLAG = "api/v1/controller/flags"
+DEFAULT_LOC_DATA = "api/v2/data/engineering"
+DEFAULT_LOC_MEAS = "api/v2/data/measured"
+DEFAULT_LOC_CONTROLLER = "api/v2/data/controller"
+DEFAULT_LOC_ACTIVE = "api/v2/configuration/active"
+DEFAULT_LOC_INPUT = "api/v2/configuration/settings/input"
+DEFAULT_LOC_FLAG = "api/v2/controller/task"
 
 MAX_POWER_LEVEL = 3400
 MIN_POWER_LEVEL = 1000
