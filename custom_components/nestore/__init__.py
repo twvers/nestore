@@ -50,10 +50,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hostname = entry.data[CONF_HOST]
     port = entry.data[CONF_PORT]
 
-    if len(hostname) > 0:
+    if len(hostname.split(".")) == 4:
         _LOGGER.info("Using fixed IP address %s at port %s ", hostname, port)
     else:
-        # find the host name
         hostID = "nestore.home"  # Replace with your target hostname
         try:
             hostname = socket.gethostbyname(hostID)
@@ -93,6 +92,11 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload config entry."""
     await async_unload_entry(hass, entry)
     await async_setup_entry(hass, entry)
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    hass.data[DOMAIN].pop(entry.entry_id, None)
+    return True
 
 
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:

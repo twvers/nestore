@@ -28,6 +28,7 @@ from .const import (
     DEFAULT_LOC_CONTROLLER,
     DEFAULT_LOC_INPUT,
     DEFAULT_LOC_DATA,
+    UPDATE_DELAY,
 )
 
 
@@ -49,9 +50,14 @@ class NestoreCoordinator(DataUpdateCoordinator):
         self.min_interval = self.config_entry.options[CONF_UPDATE_INTERVAL]
         self.full_logging = self.config_entry.options[CONF_FULL_LOGGING]
         self.control_enabled = self.config_entry.options[CONF_CONTROL]
+
+        # control entities
         self.power_level = 0
         self.target_soc = 0
+        self.duration = 0
+        self.operation_mode = "AUTO"
 
+        # data containers
         self.data_base = None
         self.data_derived = None
         self.data_counters = None
@@ -62,6 +68,7 @@ class NestoreCoordinator(DataUpdateCoordinator):
             hass,
             logger,
             name="Nestore coordinator",
+            update_method=self._async_update_data,
             update_interval=timedelta(seconds=self.min_interval),
         )
 
@@ -114,6 +121,8 @@ class NestoreCoordinator(DataUpdateCoordinator):
             self.logger.debug("Parsed CONTROL log")
             returnStates["Control"] = True
 
+        # update switch states
+
         return returnStates
 
     async def fetch_data(self, api_loc):
@@ -144,19 +153,32 @@ class NestoreCoordinator(DataUpdateCoordinator):
         except HTTPError as exc:
             if exc.response.status_code == 401:
                 raise UpdateFailed("Unauthorized: Please check your API-key.") from exc
+            else:
+                _LOGGER.debug("Update call failed")
+                return None
 
-    async def post_state(self, api_loc, power_level):
+    async def post_state(self, api_loc, power_level, soc_level, duration, spin):
         """Post state using api routine."""
         try:
             # run api_update in async job
             resp = await self.hass.async_add_executor_job(
-                self.api_post, self.host, self.port, api_loc, power_level
+                self.api_post,
+                self.host,
+                self.port,
+                api_loc,
+                power_level,
+                soc_level,
+                duration,
+                spin,
             )
             return resp
 
         except HTTPError as exc:
             if exc.response.status_code == 401:
                 raise UpdateFailed("Unauthorized: Please check your API-key.") from exc
+            else:
+                _LOGGER.debug("Post call failed")
+                return None
 
     # GENERAL: async fetch job itself
     def api_update(self, host, port, api_key):
@@ -170,9 +192,27 @@ class NestoreCoordinator(DataUpdateCoordinator):
         return client.make_request(state_flag)
 
     # GENERAL: post data
-    def api_post(self, host, port, api_key, power_level):
+    def api_post(self, host, port, api_key, power_level, soc_level, duration, spin):
         client = NestoreClient(host=host, port=port, api_key=api_key)
-        return client.post_request(power_level)
+        return client.post_request(power_level, soc_level, duration, spin)
+
+    # storing switch entity
+
+    def set_operation_mode(self, value):
+        """Set operation mode"""
+        self.operation_mode = value
+
+    def get_operation_mode(self):
+        """Get operation mode"""
+        return self.operation_mode
+
+    def get_target_duration(self):
+        """Get target duration."""
+        return self.duration
+
+    def set_target_duration(self, value):
+        """Set target duration."""
+        self.duration = int(value)
 
     # Data retrieval routines
 
@@ -218,7 +258,7 @@ class NestoreCoordinator(DataUpdateCoordinator):
 
     def set_target_soc_level(self, value):
         """Set target max state of charge level."""
-        self.target_soc = value
+        self.target_soc = int(value)
 
     def get_target_soc_level(self):
         """Get target max state of charge level."""
@@ -226,11 +266,11 @@ class NestoreCoordinator(DataUpdateCoordinator):
 
     def get_total_energy_dhw(self):
         """Get total energy DHW in kWh"""
-        return self.data_counters["ENERGY_DHW_THERMAL"] / 1000.0
+        return self.data_counters["ENERGY_DHW_THERMAL_THEORETICAL"] / 1000.0
 
     def get_current_energy_dhw(self):
         """Get current stored energy DHW in kWh"""
-        return self.data_counters["ENERGY_DHW_THERMAL_THEORETICAL"] / 1000.0
+        return self.data_derived["TE"] / 1000.0
 
     def get_total_electrical(self):
         """Get total electrical energy input in kWh"""
@@ -238,4 +278,4 @@ class NestoreCoordinator(DataUpdateCoordinator):
 
     def get_total_dhw(self):
         """Get total water volume provided in"""
-        return self.data_counters["VOL_DHW"]
+        return self.data_counters["VOL_DHW_THEORETICAL"] / 1000.0

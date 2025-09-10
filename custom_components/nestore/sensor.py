@@ -161,7 +161,7 @@ def sensor_descriptions() -> tuple[NestoreEntityDescription, ...]:
         NestoreEntityDescription(
             key="total energy dhw",
             name="total energy dhw",
-            native_unit_of_measurement=f"{UnitOfEnergy.KILO_JOULE}",
+            native_unit_of_measurement=f"{UnitOfEnergy.KILO_WATT_HOUR}",
             state_class=SensorStateClass.TOTAL_INCREASING,
             icon="mdi:temperature-celsius",
             suggested_display_precision=1,
@@ -170,7 +170,7 @@ def sensor_descriptions() -> tuple[NestoreEntityDescription, ...]:
         NestoreEntityDescription(
             key="current stored energy",
             name="current stored energy",
-            native_unit_of_measurement=f"{UnitOfEnergy.KILO_JOULE}",
+            native_unit_of_measurement=f"{UnitOfEnergy.KILO_WATT_HOUR}",
             state_class=SensorStateClass.MEASUREMENT,
             icon="mdi:temperature-celsius",
             suggested_display_precision=1,
@@ -179,7 +179,7 @@ def sensor_descriptions() -> tuple[NestoreEntityDescription, ...]:
         NestoreEntityDescription(
             key="total heater energy",
             name="total heater energy",
-            native_unit_of_measurement=f"{UnitOfEnergy.KILO_JOULE}",
+            native_unit_of_measurement=f"{UnitOfEnergy.KILO_WATT_HOUR}",
             state_class=SensorStateClass.TOTAL_INCREASING,
             icon="mdi:temperature-celsius",
             suggested_display_precision=1,
@@ -269,7 +269,7 @@ class NestoreSensor(CoordinatorEntity, RestoreSensor):
             },
             manufacturer="nestore",
             model="",
-            name="nestore" + ((" (" + name + ")") if name != "" else ""),
+            name="Nestore",
         )
 
         self._update_job = HassJob(self.async_schedule_update_ha_state)
@@ -302,3 +302,7 @@ class NestoreSensor(CoordinatorEntity, RestoreSensor):
     def available(self) -> bool:
         """Return if entity is available."""
         return self.last_update_success
+
+    @property
+    def native_value(self):
+        return self.entity_description.value_fn(self.coordinator)

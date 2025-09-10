@@ -9,6 +9,8 @@ import requests
 from .const import (
     MAX_POWER_LEVEL,
     MIN_POWER_LEVEL,
+    MIN_DURATION,
+    MAX_DURATION,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -69,30 +71,24 @@ class NestoreClient:
             _LOGGER.debug(f"Failed to patch: {response.status_code}")
             return None
 
-    def post_request(self, power_level) -> str:
+    def post_request(self, power_level, soc_level, duration, spin) -> str:
         """Definition API POST call."""
 
-        if power_level < MIN_POWER_LEVEL:
-            data_json = {
-                "TASK": "ControlTask_ChargingElectrical_Stop",
-                "spin": True,
-                "persistent": True,
-                "lifetime": 60,
-            }
-        elif power_level < MAX_POWER_LEVEL:
+        if power_level <= MAX_POWER_LEVEL and duration >= MIN_DURATION:
             data_json = {
                 "TASK": "ControlTask_ChargingElectrical_Start",
-                "spin": True,
+                "spin": spin,
                 "power": power_level,
+                "soc": soc_level,
                 "persistent": True,
-                "lifetime": 10000,
+                "lifetime": duration,
             }
 
         URL = f"http://{self.host}:{self.port}/{self.api_key}/"
 
         try:
             response = requests.post(url=URL, json=data_json)
-            _LOGGER.debug(f"Performing POST request to {URL}")
+            _LOGGER.debug(f"Performing POST request to {URL} with data {data_json}")
         except requests.Timeout:
             _LOGGER.debug("Request Timeout")
             return None
