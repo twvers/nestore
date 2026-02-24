@@ -32,7 +32,12 @@ from .coordinator import NestoreCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.NUMBER, Platform.SENSOR, Platform.SWITCH]
+PLATFORMS: list[Platform] = [
+    Platform.NUMBER,
+    Platform.SENSOR,
+    Platform.SWITCH,
+    Platform.BUTTON,
+]
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -45,15 +50,16 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up nestore from a config entry."""
 
-    _LOGGER.debug(f"Setup config data {entry.data} {entry.options}")
+    _LOGGER.debug(f"Setup config data: {entry.data}")
+    _LOGGER.debug(f"Setup config options: {entry.options}")
 
-    hostname = entry.data[CONF_HOST]
-    port = entry.data[CONF_PORT]
+    hostname = entry.options[CONF_HOST]
+    port = entry.options[CONF_PORT]
 
     if len(hostname.split(".")) == 4:
         _LOGGER.info("Using fixed IP address %s at port %s ", hostname, port)
     else:
-        hostID = "nestore.home"  # Replace with your target hostname
+        hostID = "nestore.home"  # Replace with your target hostname TBD
         try:
             hostname = socket.gethostbyname(hostID)
             _LOGGER.info("The IP address of %s is %s", hostID, hostname)
@@ -61,7 +67,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         except socket.gaierror:
             _LOGGER.error("Unable to resolve hostname: %s", hostID)
 
-    # list of api keys
+    # list of api keys and locations
     api_keys = {}
     api_keys["HOST"] = hostname
     api_keys["PORT"] = port

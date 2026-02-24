@@ -14,15 +14,13 @@ from .api_client import NestoreClient
 _LOGGER = logging.getLogger(__name__)
 
 from .const import (
-    DOMAIN,
-    CONF_HOST,
-    CONF_API_KEY,
-    CONF_PORT,
+    CONF_TOKEN,
     CONF_USERNAME,
     CONF_PASSWORD,
     CONF_UPDATE_INTERVAL,
     CONF_FULL_LOGGING,
     CONF_CONTROL,
+    DEFAULT_LOC_TOKEN,
     DEFAULT_LOC_ACTIVE,
     DEFAULT_LOC_FLAG,
     DEFAULT_LOC_CONTROLLER,
@@ -47,9 +45,13 @@ class NestoreCoordinator(DataUpdateCoordinator):
         self.api_keys = api_keys
         self.host = api_keys["HOST"]
         self.port = api_keys["PORT"]
+
         self.min_interval = self.config_entry.options[CONF_UPDATE_INTERVAL]
         self.full_logging = self.config_entry.options[CONF_FULL_LOGGING]
         self.control_enabled = self.config_entry.options[CONF_CONTROL]
+        self.control_token = self.config_entry.data[CONF_TOKEN]
+        self.control_username = self.config_entry.options[CONF_USERNAME]
+        self.control_password = self.config_entry.options[CONF_PASSWORD]
 
         # control entities
         self.power_level = 0
@@ -57,11 +59,14 @@ class NestoreCoordinator(DataUpdateCoordinator):
         self.duration = 0
         self.operation_mode = "AUTO"
 
-        # data containers
+        # initiate data containers
         self.data_base = None
         self.data_derived = None
         self.data_counters = None
         self.active = {"MODE": False, "ONLINE": False}
+
+        # create api client
+        self.client = NestoreClient(self.hass, self.host, self.port, self.control_token)
 
         logger = logging.getLogger(__name__)
         super().__init__(
@@ -100,12 +105,8 @@ class NestoreCoordinator(DataUpdateCoordinator):
         """Get the latest data from NEStore."""
         _LOGGER.info("Nestore DataUpdateCoordinator data update")
 
-        # fetching all data locations
-        data = await self.fetch_data(self.api_keys["DATA"])
-        # _LOGGER.debug(f"received data = {data.keys()}")
-
-        data_control = await self.fetch_data(self.api_keys["CONTROL"])
-        # _LOGGER.debug(f"received data = {data_control.keys()}")
+        data = await self.client.async_query_data(self.api_keys["DATA"])
+        data_control = await self.client.async_query_data(self.api_keys["CONTROL"])
 
         returnStates = {}
 
@@ -125,76 +126,25 @@ class NestoreCoordinator(DataUpdateCoordinator):
 
         return returnStates
 
-    async def fetch_data(self, api_loc):
-        """Fetch data using api routine."""
-        try:
-            # run api_update in async job
-            resp = await self.hass.async_add_executor_job(
-                self.api_update, self.host, self.port, api_loc
-            )
-            return resp
-
-        except HTTPError as exc:
-            if exc.response.status_code == 401:
-                raise UpdateFailed("Unauthorized: Please check your API-key.") from exc
-            else:
-                _LOGGER.debug("Fetch data failed")
-                return None
-
-    async def update_state(self, api_loc, state_flag):
-        """Update state using api routine."""
-        try:
-            # run api_update in async job
-            resp = await self.hass.async_add_executor_job(
-                self.api_patch, self.host, self.port, api_loc, state_flag
-            )
-            return resp
-
-        except HTTPError as exc:
-            if exc.response.status_code == 401:
-                raise UpdateFailed("Unauthorized: Please check your API-key.") from exc
-            else:
-                _LOGGER.debug("Update call failed")
-                return None
-
-    async def post_state(self, api_loc, power_level, soc_level, duration, spin):
+    async def async_post_state(self, settings):
         """Post state using api routine."""
-        try:
-            # run api_update in async job
-            resp = await self.hass.async_add_executor_job(
-                self.api_post,
-                self.host,
-                self.port,
-                api_loc,
-                power_level,
-                soc_level,
-                duration,
-                spin,
-            )
-            return resp
+        await self.client.async_post_request(self.api_keys["FLAGS"], settings)
 
-        except HTTPError as exc:
-            if exc.response.status_code == 401:
-                raise UpdateFailed("Unauthorized: Please check your API-key.") from exc
-            else:
-                _LOGGER.debug("Post call failed")
-                return None
+    async def async_refresh_token(self):
+        """get a new token"""
 
-    # GENERAL: async fetch job itself
-    def api_update(self, host, port, api_key):
-        client = NestoreClient(host=host, port=port, api_key=api_key)
-        return client.query_data()
+        self.control_token = await self.client.async_get_token(
+            DEFAULT_LOC_TOKEN, self.control_username, self.control_password
+        )
+        _LOGGER.debug("Obtained a new token: %s", self.control_token)
 
-    # GENERAL: post data
-    def api_patch(self, host, port, api_key, state_flag):
-        self.logger.debug(f"Calling API patch: {api_key}")
-        client = NestoreClient(host=host, port=port, api_key=api_key)
-        return client.make_request(state_flag)
+        _LOGGER.debug("Updating token in API client")
+        self.client.set_token(self.control_token)
 
-    # GENERAL: post data
-    def api_post(self, host, port, api_key, power_level, soc_level, duration, spin):
-        client = NestoreClient(host=host, port=port, api_key=api_key)
-        return client.post_request(power_level, soc_level, duration, spin)
+        self.hass.config_entries.async_update_entry(
+            self.config_entry,
+            data={**self.config_entry.data, "token": self.control_token},
+        )
 
     # storing switch entity
 
@@ -242,7 +192,7 @@ class NestoreCoordinator(DataUpdateCoordinator):
 
     def get_power_heater(self):
         """Get heater electrical power."""
-        return self.data_base["POWER_HEATER"]
+        return self.data_derived["POWER_HEATER"]
 
     def get_device_state(self):
         """Get current device state."""
